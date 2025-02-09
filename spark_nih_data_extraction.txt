@@ -1,0 +1,41 @@
+Commands used on university spark cluster to download files, extract the right ones and export to pc:
+
+Upload filtered data entry file to server
+scp 'C:\Users\daans\IdeaProjects\mlii-project-group-22\nih_dataset\NIH_Filtered_Data_Entry.csv' s2692759@spark-head6.eemcs.utwente.nl:/home/s2692759
+
+For 1 to 12 do:
+wget "https://huggingface.co/datasets/alkzar90/NIH-Chest-X-ray-dataset/resolve/main/data/images/images_001.zip"
+
+Put files on hdfs
+hdfs dfs -put /home/s2692759/NIH_Filtered_Data_Entry.csv /user/s2692759
+hdfs dfs -put /home/s2692759/*.zip /user/s2692759
+
+Make output directories on hdfs
+hdfs dfs -mkdir pneumonia
+hdfs dfs -mkdir normal
+
+Zip the output folders
+zip -r pneumonia.zip pneumonia
+
+Pull from server to local pc
+scp s2692759@spark-head6.eemcs.utwente.nl:/home/s2692759/MLII/pneumonia.zip 'C:\Users\daans\IdeaProjects\mlii-project-group-22\nih_dataset\original_data'
+scp s2692759@spark-head6.eemcs.utwente.nl:/home/s2692759/MLII/normal.zip 'C:\Users\daans\IdeaProjects\mlii-project-group-22\nih_dataset\original_data'
+
+
+
+Commands used in pyspark terminal on university spark cluster:
+
+import shutil, os, zipfile
+
+df1 = spark.read.csv("NIH_Filtered_Data_Entry.csv", header=True)
+
+pneumonia_images = df1.rdd.filter(lambda row: 'Pneumonia' in row['Finding Labels']).map(lambda row: row["Image Index"])
+no_finding_images = df1.rdd.filter(lambda row: row['Finding Labels'] == 'No Finding').map(lambda row: row["Image Index"])
+
+pneumonia_set = set(pneumonia_images.collect())
+normal_set = set(no_finding_images.collect())
+
+os.makedirs("normal", exist_ok=True)
+os.makedirs("pneumonia", exist_ok=True)
+
+[shutil.copyfileobj(zipfile.ZipFile(f"images_{i:03}.zip").open(file), open(os.path.join("pneumonia" if os.path.basename(file) in pneumonia_set else "normal", os.path.basename(file)), "wb")) for i in range(1, 13) for file in zipfile.ZipFile(f"images_{i:03}.zip").namelist() if file.startswith("images/") and os.path.basename(file) in pneumonia_set | normal_set]
